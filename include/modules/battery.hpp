@@ -11,6 +11,7 @@ namespace modules {
     enum class state {
       NONE = 0,
       CHARGING,
+      LOW,
       DISCHARGING,
       FULL,
     };
@@ -63,6 +64,7 @@ namespace modules {
 
    private:
     static constexpr const char* FORMAT_CHARGING{"format-charging"};
+    static constexpr const char* FORMAT_LOW{"format-low"};
     static constexpr const char* FORMAT_DISCHARGING{"format-discharging"};
     static constexpr const char* FORMAT_FULL{"format-full"};
 
@@ -70,6 +72,7 @@ namespace modules {
     static constexpr const char* TAG_BAR_CAPACITY{"<bar-capacity>"};
     static constexpr const char* TAG_RAMP_CAPACITY{"<ramp-capacity>"};
     static constexpr const char* TAG_LABEL_CHARGING{"<label-charging>"};
+    static constexpr const char* TAG_LABEL_LOW{"<label-low>"};
     static constexpr const char* TAG_LABEL_DISCHARGING{"<label-discharging>"};
     static constexpr const char* TAG_LABEL_FULL{"<label-full>"};
 
@@ -81,6 +84,7 @@ namespace modules {
     unique_ptr<consumption_reader> m_consumption_reader;
 
     label_t m_label_charging;
+    label_t m_label_low;
     label_t m_label_discharging;
     label_t m_label_full;
     animation_t m_animation_charging;
@@ -97,6 +101,7 @@ namespace modules {
     int m_percentage{0};
 
     int m_fullat{100};
+    int m_lowlevel{5};
     string m_timeformat;
     size_t m_unchanged{SKIP_N_UNCHANGED};
     chrono::duration<double> m_interval{};

@@ -26,6 +26,7 @@ namespace modules {
       : inotify_module<battery_module>(bar, move(name_)) {
     // Load configuration values
     m_fullat = math_util::min(m_conf.get(name(), "full-at", m_fullat), 100);
+    m_lowlevel = math_util::max(m_conf.get(name(), "low-level", m_lowlevel), 5);
     m_interval = m_conf.get<decltype(m_interval)>(name(), "poll-interval", 5s);
     m_lastpoll = chrono::system_clock::now();
 
@@ -85,12 +86,12 @@ namespace modules {
     m_consumption_reader = make_unique<consumption_reader>([this] {
       unsigned long current{std::strtoul(file_util::contents(m_frate).c_str(), nullptr, 10)};
       unsigned long voltage{std::strtoul(file_util::contents(m_fvoltage).c_str(), nullptr, 10)};
-	  
+
       float consumption = ((voltage / 1000.0) * (current /  1000.0)) / 1e6;
-	
+
       // convert to string with 2 decimmal places
       string rtn(16, '\0'); // 16 should be plenty big. Cant see it needing more than 6/7..
-      auto written = std::snprintf(&rtn[0], rtn.size(), "%.2f", consumption); 
+      auto written = std::snprintf(&rtn[0], rtn.size(), "%.2f", consumption);
       rtn.resize(written);
 
       return rtn;
@@ -103,6 +104,8 @@ namespace modules {
     // Add formats and elements
     m_formatter->add(FORMAT_CHARGING, TAG_LABEL_CHARGING,
         {TAG_BAR_CAPACITY, TAG_RAMP_CAPACITY, TAG_ANIMATION_CHARGING, TAG_LABEL_CHARGING});
+    m_formatter->add(
+        FORMAT_LOW, TAG_LABEL_LOW, {TAG_BAR_CAPACITY, TAG_RAMP_CAPACITY, TAG_LABEL_LOW});
     m_formatter->add(
         FORMAT_DISCHARGING, TAG_LABEL_DISCHARGING, {TAG_BAR_CAPACITY, TAG_RAMP_CAPACITY, TAG_LABEL_DISCHARGING});
     m_formatter->add(FORMAT_FULL, TAG_LABEL_FULL, {TAG_BAR_CAPACITY, TAG_RAMP_CAPACITY, TAG_LABEL_FULL});
@@ -122,6 +125,9 @@ namespace modules {
     if (m_formatter->has(TAG_LABEL_DISCHARGING, FORMAT_DISCHARGING)) {
       m_label_discharging = load_optional_label(m_conf, name(), TAG_LABEL_DISCHARGING, "%percentage%%");
     }
+    if (m_formatter->has(TAG_LABEL_LOW, FORMAT_LOW)) {
+      m_label_low = load_optional_label(m_conf, name(), TAG_LABEL_LOW, "%percentage%%");
+    }
     if (m_formatter->has(TAG_LABEL_FULL, FORMAT_FULL)) {
       m_label_full = load_optional_label(m_conf, name(), TAG_LABEL_FULL, "%percentage%%");
     }
@@ -132,7 +138,8 @@ namespace modules {
 
     // Setup time if token is used
     if ((m_label_charging && m_label_charging->has_token("%time%")) ||
-        (m_label_discharging && m_label_discharging->has_token("%time%"))) {
+        (m_label_discharging && m_label_discharging->has_token("%time%")) ||
+        (m_label_low && m_label_low->has_token("%time%"))) {
       if (!m_bar.locale.empty()) {
         setlocale(LC_TIME, m_bar.locale.c_str());
       }
@@ -206,6 +213,8 @@ namespace modules {
     const auto label = [this] {
       if (m_state == battery_module::state::FULL) {
         return m_label_full;
+      } else if (m_state == battery_module::state::LOW) {
+        return m_label_low;
       } else if (m_state == battery_module::state::DISCHARGING) {
         return m_label_discharging;
       } else {
@@ -217,7 +226,7 @@ namespace modules {
       label->reset_tokens();
       label->replace_token("%percentage%", to_string(m_percentage));
       label->replace_token("%consumption%", current_consumption());
-	  
+
       if (m_state != battery_module::state::FULL && !m_timeformat.empty()) {
         label->replace_token("%time%", current_time());
       }
@@ -234,6 +243,8 @@ namespace modules {
       return FORMAT_CHARGING;
     } else if (m_state == battery_module::state::DISCHARGING) {
       return FORMAT_DISCHARGING;
+    } else if (m_state == battery_module::state::LOW) {
+      return FORMAT_LOW;
     } else {
       return FORMAT_FULL;
     }
@@ -253,6 +264,8 @@ namespace modules {
       builder->node(m_label_charging);
     } else if (tag == TAG_LABEL_DISCHARGING) {
       builder->node(m_label_discharging);
+    } else if (tag == TAG_LABEL_LOW) {
+      builder->node(m_label_low);
     } else if (tag == TAG_LABEL_FULL) {
       builder->node(m_label_full);
     } else {
@@ -266,7 +279,9 @@ namespace modules {
    * Get the current battery state
    */
   battery_module::state battery_module::current_state() {
-    if (!read(*m_state_reader)) {
+    if (!read(*m_state_reader) && (read(*m_capacity_reader) < m_lowlevel)) {
+      return battery_module::state::LOW;
+    } else if (!read(*m_state_reader)) {
       return battery_module::state::DISCHARGING;
     } else if (read(*m_capacity_reader) < m_fullat) {
       return battery_module::state::CHARGING;
@@ -290,7 +305,7 @@ namespace modules {
   * Get the current power consumption
   */
   string battery_module::current_consumption() {
-    return read(*m_consumption_reader);	
+    return read(*m_consumption_reader);
   }
 
   /**
