@@ -279,10 +279,11 @@ namespace modules {
    * Get the current battery state
    */
   battery_module::state battery_module::current_state() {
-    if (!read(*m_state_reader) && (read(*m_capacity_reader) < m_lowlevel)) {
-      return battery_module::state::LOW;
-    } else if (!read(*m_state_reader)) {
-      return battery_module::state::DISCHARGING;
+    if (!read(*m_state_reader) {
+      if (read(*m_capacity_reader) < m_lowlevel))
+        return battery_module::state::LOW;
+      else
+        return battery_module::state::DISCHARGING;
     } else if (read(*m_capacity_reader) < m_fullat) {
       return battery_module::state::CHARGING;
     } else {
